@@ -1,7 +1,99 @@
-Ladakh’s High Altitude Areas (HAA) and Super High Altitude Areas (SHAA) expose electrical and electronic systems to extreme sub-zero temperatures, low atmospheric pressure, intense UV radiation, low humidity, condensation, and large day–night temperature variations, leading to battery degradation, reduced electronic efficiency, thermal stress, and shortened equipment lifespan. Existing solutions such as Himtapak, DIHAR and military solar-heated shelters mainly focus on space or human accommodation and do not provide dedicated, modular protection with continuous monitoring for critical electronics. Our proposed solution is a compact, modular and scalable insulated electronics enclosure integrating multi-layer insulation, greenhouse-effect-based passive solar heating with a controlled top shutter for heat retention and ventilation, active temperature regulation using a PTC heater and cooling system, and a hybrid solar–PCM–battery backup. An ESP32-based control system with BME280 sensors monitors temperature, humidity and pressure, while LoRa provides low-power long-range communication and a Firebase-based dashboard enables real-time monitoring, historical data, system-status tracking and alerts. The solution uses commercially available components with an estimated prototype cost of 10,300, making it technically feasible, cost-conscious and scalable, while its modular retrofit design enables deployment around existing electronic equipment. With field testing and environmental validation, the system aims to improve equipment reliability, reduce environmental failures, and extend the operational life of critical electronics in remote high-altitude regions.
+# Ladakh Monitoring System
 
+An ESP32-based monitoring and control system built for high-altitude / cold-climate conditions (Ladakh). It watches the temperature of a battery / distribution unit (DU), automatically drives a heater relay to keep it from freezing, tracks the surrounding environment, and pushes live data to Firebase for remote monitoring.
 
+## Features
 
+- Dual temperature sensing using W1209 NTC probes
+- Automatic heater control with hysteresis (no relay chatter)
+- External environment monitoring (temperature, humidity, pressure) via BME280
+- 3-page OLED display (internal readings, external readings, system status)
+- WiFi connectivity with automatic reconnect
+- Live data upload to Firebase Realtime Database
+- Historical logging for trend analysis
 
+## Hardware
 
-LADAKH HIGH-ALTITUDE ELECTRONICS PROTECTION SYSTEM Our idea is to develop a compact, modular and scalable protective enclosure for electrical and electronic equipment operating in the extreme high-altitude conditions of Ladakh. Instead of redesigning existing electronic equipment, the proposed system creates a controlled micro-environment around it to protect the equipment from extreme cold, low atmospheric pressure, intense solar radiation, condensation and rapid temperature variations. The enclosure uses multi-layer thermal insulation and reflective inner surfaces to minimize unwanted heat transfer and protect the internal equipment from the harsh external environment. A greenhouse-effect-based passive solar heating mechanism utilizes available solar radiation to naturally raise and retain the internal temperature. A controlled top shutter regulates solar heat gain and ventilation. During extremely cold conditions, the shutter helps retain the accumulated heat, while controlled opening provides ventilation when the internal temperature rises. Since the enclosure can receive strong solar radiation and also generate heat through the greenhouse effect and PTC heater, excessive heat can accumulate inside the enclosure. Therefore, a cooling and heat-dissipation mechanism is required to prevent overheating of the protected electronics. Temperature sensors continuously monitor the internal conditions, and when the temperature exceeds the defined safe range, the system can activate fans and the cooling/air-management system to remove excess heat. Thus, the system provides both heating during extreme cold and cooling during overheating conditions, maintaining a more stable internal environment. A PCM-based thermal management system further helps absorb and store excess thermal energy and release it gradually when required. Solar power with battery backup supplies energy to the controller, sensors and thermal-management components, supporting operation at remote locations. An ESP32 controller continuously collects data from BME280 sensors placed inside and outside the enclosure, monitoring temperature, humidity and atmospheric pressure. Based on these readings, the controller applies predefined control logic to manage the heater, fans, cooling system and shutter. LoRa provides low-power, long-range communication for transmitting data from remote units, while Firebase enables real-time data synchronization, historical storage and alerts through a web dashboard. Overall, the proposed system acts as a controlled environmental protective layer around existing electronics, combining passive solar heating, controlled shutter-based ventilation, active heating and cooling, thermal energy management, reliable power backup and remote monitoring. Its modular design allows the enclosure to be adapted to different equipment sizes and deployed as individual units or as multiple connected units across remote high-altitude locations.
+| Component | Role |
+|---|---|
+| ESP32 Dev Board | Main controller |
+| W1209 NTC probe #1 | Internal environment temperature (monitoring only) |
+| W1209 NTC probe #2 | DU / battery temperature (controls the heater) |
+| BME280 | External temperature, humidity, pressure |
+| SSD1306 OLED (128x64, I2C) | Local display |
+| Relay module (active LOW) | Switches the heater |
+| Buck converter | Steps down field power (e.g. 12V) to 5V for the ESP32 and relay |
+
+## Pin Connections
+
+| Signal | ESP32 Pin |
+|---|---|
+| Internal NTC probe | GPIO32 |
+| DU / battery NTC probe | GPIO33 |
+| Relay IN | GPIO23 |
+| I2C SDA (OLED + BME280) | GPIO22 |
+| I2C SCL (OLED + BME280) | GPIO21 |
+
+**Power**
+- OLED and BME280 → 3.3V
+- Relay module → 5V (from buck converter output)
+- All GND lines tied to a common ground
+
+**NTC probes** (voltage divider, one per probe)
+```
+Probe ---- GND
+Probe ---- GPIO (32 or 33) ---- 10kΩ resistor ---- 3.3V
+```
+
+## Heater (Relay) Logic
+
+The relay is controlled only by the DU / battery probe (GPIO33):
+
+- DU temperature **≤ 20°C** → heater **ON**
+- DU temperature **≥ 22°C** → heater **OFF**
+- Between 20°C and 22°C → relay holds its previous state (hysteresis, prevents rapid on/off switching)
+
+If the DU sensor reading is invalid (probe disconnected), the heater is forced OFF as a safety default.
+
+## OLED Pages
+
+1. **Internal / DU** – internal temperature, DU temperature, relay state, heater state
+2. **External** – external temperature, humidity, pressure, BME280 status
+3. **System** – WiFi status, cloud upload status, relay state, time since last successful upload
+
+Pages rotate automatically every few seconds.
+
+## Firebase
+
+Data is pushed to a Firebase Realtime Database:
+
+- `/ladakhMonitoringSystem/latest` – overwritten every 10 seconds with the current reading
+- `/ladakhMonitoringSystem/history` – a new timestamped entry appended every 60 seconds
+
+Each payload includes internal temp, DU temp, external temp/humidity/pressure, relay state, sensor health flags, WiFi status, and uptime.
+
+## Setup
+
+1. Install the required Arduino libraries:
+   - `Adafruit SSD1306`
+   - `Adafruit GFX`
+   - `Adafruit BME280`
+   - `Adafruit Unified Sensor`
+2. In the sketch, set your network and Firebase credentials:
+   ```cpp
+   const char* WIFI_SSID     = "YOUR_WIFI_NAME";
+   const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+   const char* FIREBASE_DATABASE_URL = "https://YOUR_PROJECT-default-rtdb.firebaseio.com";
+   const char* FIREBASE_AUTH = "YOUR_DATABASE_SECRET";
+   ```
+3. Select **ESP32 Dev Module** under Tools → Board, choose the correct COM port, and upload.
+4. Open the Serial Monitor at 115200 baud to confirm WiFi, sensor, and Firebase status on boot.
+
+## Safety Notes
+
+- If the heater runs on mains (AC) voltage, keep all high-voltage wiring isolated to the relay's dry contacts (COM/NO). No ESP32 pin should ever touch the AC side.
+- The relay defaults to OFF at boot and stays OFF if the DU sensor fails, to avoid uncontrolled heating.
+
+## License
+
+Add your preferred license here (e.g. MIT).
